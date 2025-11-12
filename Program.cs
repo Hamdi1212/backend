@@ -1,112 +1,90 @@
-using Microsoft.OpenApi.Models;
-using Checklist.Models;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
-using System.Text;
-using System.Security.Claims;
+        using Checklist.Helpers;
+        using Checklist.Models;
+        using Microsoft.OpenApi.Models;
+        using Microsoft.EntityFrameworkCore;
+        using Microsoft.AspNetCore.Authentication.JwtBearer;
+        using Microsoft.IdentityModel.Tokens;
+        using System.Text;
 
-var builder = WebApplication.CreateBuilder(args);
+        var builder = WebApplication.CreateBuilder(args);
 
-//  Get connection string from appsettings.json
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+        // Add services to the container.
+        builder.Services.AddControllers();
 
-// Add DbContext
-builder.Services.AddDbContext<DataContext>(options =>
-    options.UseSqlServer(connectionString));
+        // Register EF Core DbContext (ensure "DefaultConnection" exists in appsettings.json)
+        builder.Services.AddDbContext<DataContext>(options =>
+            options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+        // Register helper (optional) — use the imported namespace and the short type name
+        builder.Services.AddScoped<JwtHelper>();
 
-//  Add controllers + prevent JSON circular reference
-builder.Services.AddControllers()
-    .AddJsonOptions(options =>
-    {
-        options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.Preserve;
-        options.JsonSerializerOptions.MaxDepth = 64;
-    });
+        // Configure JWT authentication and set default scheme
+        var jwtKey = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key is missing from configuration.");
+        if (jwtKey.Length < 32) throw new InvalidOperationException("Jwt:Key must be at least 32 characters long.");
 
-//  Add Swagger (API documentation)
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
-{
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Checklist", Version = "v1" });
-
-    //  Add JWT Bearer Authorization support
-    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-    {
-        Name = "Authorization",
-        Type = SecuritySchemeType.ApiKey,
-        Scheme = "Bearer",
-        BearerFormat = "JWT",
-        In = ParameterLocation.Header,
-        Description = "Enter your JWT token below. Example: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-    });
-
-    c.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        {
-            new OpenApiSecurityScheme
+        builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
             {
-                Reference = new OpenApiReference
+                var jwtIssuer = builder.Configuration["Jwt:Issuer"];
+                var jwtAudience = builder.Configuration["Jwt:Audience"];
+
+                options.TokenValidationParameters = new TokenValidationParameters
                 {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "Bearer"
+                    ValidateIssuer = true,
+                    ValidIssuer = jwtIssuer,
+                    ValidateAudience = true,
+                    ValidAudience = jwtAudience,
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+                    ValidateLifetime = true
+                };
+            });
+
+        builder.Services.AddAuthorization();
+
+        // Swagger with JWT support
+        builder.Services.AddEndpointsApiExplorer();
+        builder.Services.AddSwaggerGen(c =>
+        {
+            c.SwaggerDoc("v1", new OpenApiInfo { Title = "Checklist API", Version = "v1" });
+
+            c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+            {
+                Description = "Enter 'Bearer {token}'.",
+                Name = "Authorization",
+                In = ParameterLocation.Header,
+                Type = SecuritySchemeType.Http,
+                Scheme = "bearer",
+                BearerFormat = "JWT"
+            });
+
+            c.AddSecurityRequirement(new OpenApiSecurityRequirement
+            {
+                {
+                    new OpenApiSecurityScheme
+                    {
+                        Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+                    },
+                    new string[] { }
                 }
-            },
-            new string[] {}
+            });
+        });
+
+        var app = builder.Build();
+
+        // Configure the HTTP request pipeline.
+        if (app.Environment.IsDevelopment())
+        {
+            app.UseSwagger();
+            app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Checklist API v1"));
         }
-    });
-});
 
-//  Add CORS policy (allow Angular frontend)
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("MyPolicy", builder =>
-    {
-        builder.AllowAnyOrigin()
-               .AllowAnyMethod()
-               .AllowAnyHeader();
-    });
-});
+        app.UseHttpsRedirection();
 
-//  JWT Authentication setup
+        // Important: authentication must run before authorization
+        app.UseAuthentication();
+        app.UseAuthorization();
 
+        app.MapControllers();
 
-// JWT Authentication setup
-var jwtKey = builder.Configuration["Jwt:Key"];
-builder.Services.AddAuthentication(x =>
-{
-    x.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    x.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-})
-.AddJwtBearer(x =>
-{
-    x.RequireHttpsMetadata = false;
-    x.SaveToken = true;
-    x.TokenValidationParameters = new TokenValidationParameters
-    {
-        ValidateIssuerSigningKey = true,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
-        ValidateAudience = false,
-        ValidateIssuer = false,
-        RoleClaimType = ClaimTypes.Role //  correct mapping
-    };
-});
-
-
-var app = builder.Build();
-
-//  Middleware pipeline
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-
-app.UseHttpsRedirection();
-app.UseCors("MyPolicy");
-app.UseAuthentication();
-app.UseAuthorization();
-
-app.MapControllers();
-
-app.Run();
+        app.Run();

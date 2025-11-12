@@ -1,3 +1,4 @@
+
 using System;
 using System.Collections.Generic;
 
@@ -13,9 +14,5 @@ namespace Checklist.Models.Dtos
 		public List<ProjectDto> Projects { get; set; } = new();
 	}
 
-	public class ProjectDto
-	{
-		public Guid Id { get; set; }
-		public string Name { get; set; } = string.Empty;
-	}
+
 }

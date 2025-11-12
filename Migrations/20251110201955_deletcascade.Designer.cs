@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Checklist.Migrations
 {
     [DbContext(typeof(DataContext))]
-    [Migration("20251101072627_InitialCreate")]
-    partial class InitialCreate
+    [Migration("20251110201955_deletcascade")]
+    partial class DeleteCascade : Migration
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -22,6 +22,8 @@ namespace Checklist.Migrations
             modelBuilder
                 .HasAnnotation("ProductVersion", "9.0.10")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
+
+            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
             modelBuilder.Entity("Checklist.Models.Answer", b =>
                 {
@@ -57,25 +59,17 @@ namespace Checklist.Migrations
                     b.Property<Guid>("LineId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid?>("LineId1")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<Guid>("ProjectId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("ProjectId1")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("TemplateId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid?>("TemplateId1")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("UserId1")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("status")
@@ -86,19 +80,11 @@ namespace Checklist.Migrations
 
                     b.HasIndex("LineId");
 
-                    b.HasIndex("LineId1");
-
                     b.HasIndex("ProjectId");
-
-                    b.HasIndex("ProjectId1");
 
                     b.HasIndex("TemplateId");
 
-                    b.HasIndex("TemplateId1");
-
                     b.HasIndex("UserId");
-
-                    b.HasIndex("UserId1");
 
                     b.ToTable("Checklists");
                 });
@@ -212,6 +198,27 @@ namespace Checklist.Migrations
                     b.ToTable("Users");
                 });
 
+            modelBuilder.Entity("Checklist.Models.UserProject", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("UserProjects");
+                });
+
             modelBuilder.Entity("Checklist.Models.Answer", b =>
                 {
                     b.HasOne("Checklist.Models.Checklist", "Checklist")
@@ -234,44 +241,28 @@ namespace Checklist.Migrations
             modelBuilder.Entity("Checklist.Models.Checklist", b =>
                 {
                     b.HasOne("Checklist.Models.Line", "Line")
-                        .WithMany()
-                        .HasForeignKey("LineId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Checklist.Models.Line", null)
                         .WithMany("Checklists")
-                        .HasForeignKey("LineId1");
+                        .HasForeignKey("LineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.HasOne("Checklist.Models.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Checklist.Models.Project", null)
                         .WithMany("Checklists")
-                        .HasForeignKey("ProjectId1");
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.HasOne("Checklist.Models.Template", "Template")
-                        .WithMany()
-                        .HasForeignKey("TemplateId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Checklist.Models.Template", null)
                         .WithMany("Checklists")
-                        .HasForeignKey("TemplateId1");
+                        .HasForeignKey("TemplateId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.HasOne("Checklist.Models.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Checklist.Models.User", null)
                         .WithMany("Checklists")
-                        .HasForeignKey("UserId1");
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("Line");
 
@@ -302,6 +293,25 @@ namespace Checklist.Migrations
                         .IsRequired();
 
                     b.Navigation("Template");
+                });
+
+            modelBuilder.Entity("Checklist.Models.UserProject", b =>
+                {
+                    b.HasOne("Checklist.Models.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Checklist.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Checklist.Models.Checklist", b =>

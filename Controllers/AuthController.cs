@@ -2,8 +2,8 @@
 using Microsoft.EntityFrameworkCore;
 using Checklist.Models;
 using Checklist.Helpers;
-using BCrypt.Net;
 using Checklist.Models.Dtos;
+using BCrypt.Net; // Add this using directive
 
 namespace Checklist.Controllers
 {

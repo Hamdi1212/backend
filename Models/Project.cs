@@ -11,7 +11,5 @@ namespace Checklist.Models
         public ICollection<Line>? Lines { get; set; }
         public ICollection<Checklist>? Checklists { get; set; }
 
-        public ICollection<UserProject>? UserProjects { get; set; }
-
     }
 }

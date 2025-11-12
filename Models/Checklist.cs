@@ -12,6 +12,7 @@ namespace Checklist.Models
         public Guid LineId { get; set; }
         public Guid TemplateId { get; set; }
         public string status { get; set; } = "InProgess";
+        public string Title { get; set; } = string.Empty;
 
         // object navigation properties
         public User User { get; set; }

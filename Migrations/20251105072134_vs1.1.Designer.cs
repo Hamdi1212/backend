@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Checklist.Migrations
 {
     [DbContext(typeof(DataContext))]
-    [Migration("20251101072627_InitialCreate")]
-    partial class InitialCreate
+    [Migration("20251105072134_vs1.1")]
+    partial class vs11
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -22,6 +22,8 @@ namespace Checklist.Migrations
             modelBuilder
                 .HasAnnotation("ProductVersion", "9.0.10")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
+
+            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
             modelBuilder.Entity("Checklist.Models.Answer", b =>
                 {
@@ -195,6 +197,12 @@ namespace Checklist.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("RefreshToken")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("RefreshTokenExpiryTime")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -210,6 +218,24 @@ namespace Checklist.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("Checklist.Models.UserProject", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("UserId", "ProjectId");
+
+                    b.HasIndex("ProjectId");
+
+                    b.ToTable("UserProjects");
                 });
 
             modelBuilder.Entity("Checklist.Models.Answer", b =>
@@ -304,6 +330,25 @@ namespace Checklist.Migrations
                     b.Navigation("Template");
                 });
 
+            modelBuilder.Entity("Checklist.Models.UserProject", b =>
+                {
+                    b.HasOne("Checklist.Models.Project", "Project")
+                        .WithMany("UserProjects")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Checklist.Models.User", "User")
+                        .WithMany("UserProjects")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Checklist.Models.Checklist", b =>
                 {
                     b.Navigation("Answers");
@@ -319,6 +364,8 @@ namespace Checklist.Migrations
                     b.Navigation("Checklists");
 
                     b.Navigation("Lines");
+
+                    b.Navigation("UserProjects");
                 });
 
             modelBuilder.Entity("Checklist.Models.Question", b =>
@@ -336,6 +383,8 @@ namespace Checklist.Migrations
             modelBuilder.Entity("Checklist.Models.User", b =>
                 {
                     b.Navigation("Checklists");
+
+                    b.Navigation("UserProjects");
                 });
 #pragma warning restore 612, 618
         }

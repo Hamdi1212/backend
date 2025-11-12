@@ -5,123 +5,129 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Checklist.Controllers { }
-[Authorize(Roles = "Admin")]
-[ApiController]
-[Route("api/[controller]")]
-public class AdminController : ControllerBase
+namespace Checklist.Controllers
 {
-    private readonly DataContext _context;
-
-    public AdminController(DataContext context)
+    [Authorize(Roles = "Admin")]
+    [ApiController]
+    [Route("api/[controller]")]
+    public class AdminController : ControllerBase
     {
-        _context = context;
-    }
+        private readonly DataContext _context;
 
-    [HttpPost("createUser")]
-    public async Task<IActionResult> CreateUser([FromBody] UserCreateDto dto)
-    {
-        if (!ModelState.IsValid)
-            return BadRequest(ModelState);
-
-        if (await _context.Users.AnyAsync(u => u.Username == dto.Username))
-            return BadRequest(new { message = "Username already exists" });
-
-        var hashed = BCrypt.Net.BCrypt.HashPassword(dto.Password);
-
-        var user = new User
+        public AdminController(DataContext context)
         {
-            Id = Guid.NewGuid(),
-            Username = dto.Username,
-            password = hashed,
-            FullName = dto.FullName,
-            Role = dto.Role ?? "User"
-        };
+            _context = context;
+        }
 
-        _context.Users.Add(user);
-        await _context.SaveChangesAsync();
-
-        //  Assign projects if provided
-        if (dto.ProjectIds != null && dto.ProjectIds.Count > 0)
+        [HttpPost("createUser")]
+        public async Task<IActionResult> CreateUser([FromBody] UserCreateDto dto)
         {
-            var validProjects = await _context.Projects
-                .Where(p => dto.ProjectIds.Contains(p.Id))
-                .ToListAsync();
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
 
-            foreach (var project in validProjects)
+            if (await _context.Users.AnyAsync(u => u.Username == dto.Username))
+                return BadRequest(new { message = "Username already exists" });
+
+            var hashed = BCrypt.Net.BCrypt.HashPassword(dto.Password);
+
+            var user = new User
             {
-                _context.UserProjects.Add(new UserProject
+                Id = Guid.NewGuid(),
+                Username = dto.Username,
+                password = hashed,
+                FullName = dto.FullName,
+                Role = dto.Role ?? "User"
+            };
+
+            _context.Users.Add(user);
+            await _context.SaveChangesAsync();
+
+            //  Assign projects if provided
+            if (dto.ProjectIds != null && dto.ProjectIds.Count > 0)
+            {
+                var validProjects = await _context.Projects
+                    .Where(p => dto.ProjectIds.Contains(p.Id))
+                    .ToListAsync();
+
+                foreach (var project in validProjects)
                 {
-                    Id = Guid.NewGuid(),
-                    UserId = user.Id,
-                    ProjectId = project.Id
-                });
+                    _context.UserProjects.Add(new UserProject
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = user.Id,
+                        ProjectId = project.Id
+                    });
+                }
+
+                await _context.SaveChangesAsync();
             }
+
+            return Ok(new
+            {
+                user.Id,
+                user.Username,
+                user.FullName,
+                user.Role,
+                AssignedProjects = dto.ProjectIds
+            });
+        }
+        [HttpDelete("deleteUser/{id:guid}")]
+        public async Task<IActionResult> DeleteUser(Guid id)
+        {
+            var user = await _context.Users.FindAsync(id);
+            if (user == null) return NotFound(new { message = "User not found" });
+
+            // optional: prevent deleting the last admin — check role counts
+            if (user.Role == "Admin")
+            {
+                var adminCount = await _context.Users.CountAsync(u => u.Role == "Admin");
+                if (adminCount <= 1)
+                    return BadRequest(new { message = "Cannot delete the last admin." });
+            }
+
+            _context.Users.Remove(user);
+            await _context.SaveChangesAsync();
+            return Ok(new { message = "User deleted" });
+        }
+        [HttpPut("updateUser/{id:guid}")]
+        public async Task<IActionResult> UpdateUser(Guid id, [FromBody] UserUpdateDto dto)
+        {
+            var user = await _context.Users.FindAsync(id);
+            if (user == null)
+                return NotFound(new { message = "User not found" });
+
+            // Update user basic info
+            user.FullName = dto.FullName;
+            user.Role = dto.Role;
+
+            // Update password only if provided
+            if (!string.IsNullOrEmpty(dto.Password))
+            {
+                user.password = BCrypt.Net.BCrypt.HashPassword(dto.Password);
+            }
+
+            // Update assigned projects
+            if (dto.ProjectIds != null)
+            {
+                // Remove old project assignments
+                var existing = _context.UserProjects.Where(up => up.UserId == user.Id);
+                _context.UserProjects.RemoveRange(existing);
+
+                // Add new project assignments
+                foreach (var projectId in dto.ProjectIds)
+                {
+                    _context.UserProjects.Add(new UserProject
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = user.Id,
+                        ProjectId = projectId
+                    });
+                }
+            }
+
 
             await _context.SaveChangesAsync();
-        }
-
-        return Ok(new
-        {
-            user.Id,
-            user.Username,
-            user.FullName,
-            user.Role,
-            AssignedProjects = dto.ProjectIds
-        });
-    }
-    [HttpDelete("deleteUser/{id:guid}")]
-    public async Task<IActionResult> DeleteUser(Guid id)
-    {
-        var user = await _context.Users.FindAsync(id);
-        if (user == null) return NotFound(new { message = "User not found" });
-
-        // optional: prevent deleting the last admin — check role counts
-        if (user.Role == "Admin")
-        {
-            var adminCount = await _context.Users.CountAsync(u => u.Role == "Admin");
-            if (adminCount <= 1)
-                return BadRequest(new { message = "Cannot delete the last admin." });
-        }
-
-        _context.Users.Remove(user);
-        await _context.SaveChangesAsync();
-        return Ok(new { message = "User deleted" });
-    }
-    [HttpPut("updateUser/{id:guid}")]
-    public async Task<IActionResult> UpdateUser(Guid id, [FromBody] UserUpdateDto dto)
-    {
-        var user = await _context.Users.FindAsync(id);
-        if (user == null)
-            return NotFound(new { message = "User not found" });
-
-        // Update user basic info
-        user.FullName = dto.FullName;
-        user.Role = dto.Role;
-
-        // Update password only if provided
-        if (!string.IsNullOrEmpty(dto.Password))
-        {
-            user.password = BCrypt.Net.BCrypt.HashPassword(dto.Password);
-        }
-
-        // Update assigned projects
-        if (dto.ProjectIds != null)
-        {
-            // Remove old project assignments
-            var existing = _context.UserProjects.Where(up => up.UserId == user.Id);
-            _context.UserProjects.RemoveRange(existing);
-
-            // Add new project assignments
-            foreach (var projectId in dto.ProjectIds)
-            {
-                _context.UserProjects.Add(new UserProject
-                {
-                    Id = Guid.NewGuid(),
-                    UserId = user.Id,
-                    ProjectId = projectId
-                });
-            }
+            return Ok(new { message = "User updated successfully" });
         }
         [HttpGet("getUserDetails/{id:guid}")]
         public async Task<IActionResult> GetUserDetails(Guid id)
@@ -154,12 +160,9 @@ public class AdminController : ControllerBase
             };
 
             return Ok(result);
+
+
         }
-
-        await _context.SaveChangesAsync();
-        return Ok(new { message = "User updated successfully" });
     }
-
 }
-
 
