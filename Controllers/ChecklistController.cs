@@ -21,7 +21,7 @@ namespace Checklist.Controllers
             _context = context;
         }
 
-        // ? Create a new checklist and submit answers (existing)
+
         [HttpPost("create")]
         public async Task<IActionResult> CreateChecklist([FromBody] ChecklistCreateDto dto)
         {
@@ -31,6 +31,7 @@ namespace Checklist.Controllers
             var checklistEntity = new Checklist.Models.Checklist
             {
                 Id = Guid.NewGuid(),
+
                 TemplateId = dto.TemplateId,
                 UserId = dto.UserId,
                 Answers = dto.Answers.Select(a => new Answer
@@ -46,6 +47,7 @@ namespace Checklist.Controllers
 
             return Ok(new { message = "Checklist created successfully", checklistEntity.Id });
         }
+
         [Authorize(Roles = "User")]
         [HttpPost("start")]
         public async Task<IActionResult> StartChecklist([FromBody] ChecklistStartDto dto)
@@ -123,6 +125,7 @@ namespace Checklist.Controllers
             // Ici on peut déclencher génération PDF / envoi e-mail (prochaine étape : background tasks)
             return Ok(new { message = "Réponses sauvegardées et checklist soumise." });
         }
+
         [Authorize(Roles = "Admin")]
         [HttpGet("getAll")]
         public async Task<IActionResult> GetAllChecklists()
@@ -135,6 +138,7 @@ namespace Checklist.Controllers
                 .Select(c => new ChecklistDto
                 {
                     Id = c.Id,
+
                     TemplateName = c.Template != null ? c.Template.Name : string.Empty,
                     UserName = c.User != null ? c.User.Username : string.Empty,
                     Answers = c.Answers.Select(a => new AnswerDto
@@ -147,6 +151,7 @@ namespace Checklist.Controllers
 
             return Ok(checklists);
         }
+
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> GetChecklistById(Guid id)
         {
@@ -163,6 +168,7 @@ namespace Checklist.Controllers
             var dto = new ChecklistDto
             {
                 Id = checklist.Id,
+
                 TemplateName = checklist.Template != null ? checklist.Template.Name : string.Empty,
                 UserName = checklist.User != null ? checklist.User.Username : string.Empty,
                 Answers = checklist.Answers.Select(a => new AnswerDto

@@ -14,6 +14,7 @@ namespace Checklist.Models
         public Guid TemplateId { get; set; }
         public string status { get; set; } = "InProgess";
 
+
         // New fields requested: Date, Shift, NotificationStatus
         // Date: timestamp for creation/submission
         public DateTime? Date { get; set; }
@@ -23,6 +24,9 @@ namespace Checklist.Models
 
         // Notification status for PDF/email processing
         public string NotificationStatus { get; set; } = "Pending";
+
+        public string Title { get; set; } = string.Empty;
+
 
         // object navigation properties
         public User User { get; set; }

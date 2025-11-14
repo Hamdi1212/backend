@@ -93,6 +93,7 @@ namespace Checklist.Controllers
             _context.Lines.Add(line);
             await _context.SaveChangesAsync();
 
+<<<<<<< HEAD
             // Retourner un DTO plat pour éviter la boucle de sérialisation
             var result = new LineDto
             {
@@ -103,6 +104,9 @@ namespace Checklist.Controllers
             };
 
             return CreatedAtAction(nameof(GetLineById), new { id = line.Id }, result);
+=======
+            return Ok(new { message = "Line created successfully", line });
+>>>>>>> 9969a264276429e8a85024f3516fd8aee3b2d15a
         }
 
         //  PUT update existing line
