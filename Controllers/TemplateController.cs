@@ -6,7 +6,7 @@ using Checklist.Models.Dtos;
 
 namespace Checklist.Controllers
 {
-    [Authorize(Roles = "Admin")] //  Only admins can manage templates
+    [Authorize] // Allow authenticated users, restrict specific methods as needed
     [ApiController]
     [Route("api/[controller]")]
     public class TemplateController : ControllerBase
@@ -20,6 +20,7 @@ namespace Checklist.Controllers
 
         //  Get all templates
         [HttpGet("getAll")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> GetAllTemplates()
         {
             var templates = await _context.Templates
@@ -36,6 +37,7 @@ namespace Checklist.Controllers
 
         //  Get template by ID
         [HttpGet("{id:guid}")]
+        [Authorize(Roles = "Admin,User")] // Allow both Admin and User roles
         public async Task<IActionResult> GetTemplateById(Guid id)
         {
             var template = await _context.Templates.FindAsync(id);
@@ -54,6 +56,7 @@ namespace Checklist.Controllers
 
         //  Create new template
         [HttpPost("create")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> CreateTemplate([FromBody] TemplateCreateDto dto)
         {
             if (!ModelState.IsValid)
@@ -74,6 +77,7 @@ namespace Checklist.Controllers
 
         //  Update template
         [HttpPut("update/{id:guid}")]
+        [Authorize(Roles = "Admin")] // Only Admins can update templates
         public async Task<IActionResult> UpdateTemplate(Guid id, [FromBody] TemplateUpdateDto dto)
         {
             var template = await _context.Templates.FindAsync(id);
@@ -89,16 +93,53 @@ namespace Checklist.Controllers
 
         //  Delete template
         [HttpDelete("delete/{id:guid}")]
+        [Authorize(Roles = "Admin")] // Only Admins can delete templates
         public async Task<IActionResult> DeleteTemplate(Guid id)
         {
             var template = await _context.Templates.FindAsync(id);
             if (template == null)
                 return NotFound(new { message = "Template not found" });
 
+            // Check if any checklists reference this template
+            var checklistCount = await _context.Checklists
+                .Where(c => c.TemplateId == id)
+                .CountAsync();
+            
+            if (checklistCount > 0)
+            {
+                return BadRequest(new { 
+                    message = $"Cannot delete template. It is being used by {checklistCount} checklist(s).",
+                    checklistCount = checklistCount
+                });
+            }
+
             _context.Templates.Remove(template);
             await _context.SaveChangesAsync();
 
             return Ok(new { message = "Template deleted successfully" });
+        }
+        [HttpGet("available")]
+        [Authorize(Roles = "Admin,User")] // Allow both Admin and User roles
+        public async Task<IActionResult> GetAvailableTemplates()
+        {
+            try
+            {
+                var templates = await _context.Templates
+                    .Select(t => new
+                    {
+                        id = t.Id,
+                        name = t.Name,
+                        description = t.Description
+                    })
+                    .ToListAsync();
+
+                return Ok(templates);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[GetAvailableTemplates] Error: {ex.Message}");
+                return StatusCode(500, new { message = "Error fetching templates", error = ex.Message });
+            }
         }
     }
 }

@@ -71,6 +71,21 @@ namespace Checklist.Controllers
                 AssignedProjects = dto.ProjectIds
             });
         }
+        // Add this inside AdminController
+        [HttpGet("getAllUsers")]
+        public async Task<IActionResult> GetAllUsers()
+        {
+            var users = await _context.Users
+                .Select(u => new {
+                    Id = u.Id,
+                    Username = u.Username,
+                    FullName = u.FullName,
+                    Role = u.Role
+                })
+                .ToListAsync();
+
+            return Ok(users);
+        }
         [HttpDelete("deleteUser/{id:guid}")]
         public async Task<IActionResult> DeleteUser(Guid id)
         {
@@ -133,7 +148,6 @@ namespace Checklist.Controllers
         public async Task<IActionResult> GetUserDetails(Guid id)
         {
             var user = await _context.Users
-                .Include(u => u.Checklists)
                 .FirstOrDefaultAsync(u => u.Id == id);
 
             if (user == null)
@@ -160,8 +174,6 @@ namespace Checklist.Controllers
             };
 
             return Ok(result);
-
-
         }
     }
 }

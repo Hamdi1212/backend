@@ -1,11 +1,13 @@
+using Checklist.Models;
+using Checklist.Models.Dtos;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Checklist.Models;
-using Checklist.Models.Dtos;
-using System.Linq;
-using System.Threading.Tasks;
 using System;
+using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
+using System.Security.Claims;
+using System.Threading.Tasks;
 
 namespace Checklist.Controllers
 {
@@ -180,5 +182,58 @@ namespace Checklist.Controllers
 
             return Ok(dto);
         }
+
+        [Authorize(Roles = "User")]
+        [HttpGet("my")]
+        public async Task<IActionResult> GetMyChecklists()
+        {
+            try
+            {
+                // Try multiple claim types for username
+                var username = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+                            ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                            ?? User.FindFirst("sub")?.Value;
+
+                Console.WriteLine($"[GetMyChecklists] Username from token: '{username}'");
+
+                if (string.IsNullOrEmpty(username))
+                    return Unauthorized(new { message = "Invalid token - no username claim" });
+
+                // Find the user by username
+                var user = await _context.Users.FirstOrDefaultAsync(u => u.Username == username);
+                Console.WriteLine($"[GetMyChecklists] User found: {user != null}, UserId: {user?.Id}");
+
+                if (user == null)
+                    return NotFound(new { message = $"User not found: {username}" });
+
+                // Get checklists - REMOVED Title since column doesn't exist
+                var checklists = await _context.Checklists
+                    .Where(c => c.UserId == user.Id)
+                    .Include(c => c.Template)
+                    .Include(c => c.Project)
+                    .Include(c => c.Line)
+                    .Select(c => new
+                    {
+                        c.Id,
+                        TemplateName = c.Template != null ? c.Template.Name : "Unknown",
+                        ProjectName = c.Project != null ? c.Project.Name : "",
+                        LineName = c.Line != null ? c.Line.Name : "",
+                        Status = c.status ?? "Pending",
+                        c.Date,
+                        c.Shift
+                    })
+                    .ToListAsync();
+
+                Console.WriteLine($"[GetMyChecklists] Found {checklists.Count} checklists for user '{username}'");
+
+                return Ok(checklists);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[GetMyChecklists] EXCEPTION: {ex.Message}");
+                return StatusCode(500, new { message = "Internal server error", error = ex.Message });
+            }
+        }
+
     }
 }

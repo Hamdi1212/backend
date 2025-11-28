@@ -31,7 +31,7 @@ namespace Checklist.Controllers
             }
 
             var token = _jwtHelper.GenerateJwtToken(user);
-            return Ok(new { Token = token });
+            return Ok(new { token = token });
         }
 
     }

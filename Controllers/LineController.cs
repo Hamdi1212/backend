@@ -6,7 +6,7 @@ using Checklist.Models.Dtos;
 
 namespace Checklist.Controllers
 {
-    [Authorize(Roles = "Admin")]
+    [Authorize] // Allow authenticated users, restrict specific methods as needed
     [Route("api/[controller]")]
     [ApiController]
     public class LineController : ControllerBase
@@ -20,6 +20,7 @@ namespace Checklist.Controllers
 
         //  GET all lines
         [HttpGet]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> GetAllLines()
         {
             var lines = await _context.Lines
@@ -36,8 +37,10 @@ namespace Checklist.Controllers
             return Ok(lines);
         }
 
+
         //  GET lines by Project ID
         [HttpGet("byProject/{projectId:guid}")]
+        [Authorize(Roles = "Admin,User")] // Allow both Admin and User roles
         public async Task<IActionResult> GetLinesByProject(Guid projectId)
         {
             var lines = await _context.Lines
@@ -55,6 +58,7 @@ namespace Checklist.Controllers
 
         //  GET line by ID
         [HttpGet("{id:guid}")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> GetLineById(Guid id)
         {
             var line = await _context.Lines
@@ -77,6 +81,7 @@ namespace Checklist.Controllers
 
         //  POST create new line
         [HttpPost]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> CreateLine([FromBody] LineCreateDto dto)
         {
             var project = await _context.Projects.FindAsync(dto.ProjectId);
@@ -110,6 +115,7 @@ namespace Checklist.Controllers
 
         //  PUT update existing line
         [HttpPut("{id:guid}")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> UpdateLine(Guid id, [FromBody] LineUpdateDto dto)
         {
             var line = await _context.Lines.FindAsync(id);
@@ -130,6 +136,7 @@ namespace Checklist.Controllers
 
         //  DELETE line
         [HttpDelete("{id:guid}")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> DeleteLine(Guid id)
         {
             var line = await _context.Lines.FindAsync(id);
@@ -141,5 +148,6 @@ namespace Checklist.Controllers
 
             return Ok(new { message = "Line deleted successfully" });
         }
+
     }
 }

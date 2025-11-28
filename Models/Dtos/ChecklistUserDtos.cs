@@ -1,30 +1,40 @@
 using System;
-using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 
 namespace Checklist.Models.Dtos
 {
     public class ChecklistStartDto
     {
-        // keep UserId for now, but recommend deriving from JWT in controller
+        [Required]
         public Guid UserId { get; set; }
-        public Guid ProjectId { get; set; }
-        public Guid LineId { get; set; }
+
+        [Required]
         public Guid TemplateId { get; set; }
 
-        // New header fields from front
+        public Guid? ProjectId { get; set; }
+        
+        public Guid? LineId { get; set; }
+
         public DateTime? Date { get; set; }
+
         public string? Shift { get; set; }
     }
 
     public class ChecklistSubmitDto
     {
+        [Required]
         public Guid ChecklistId { get; set; }
-        public List<UserAnswerDto> Answers { get; set; } = new();
+
+        [Required]
+        public List<AnswerSubmitDto> Answers { get; set; } = new();
     }
 
-    public class UserAnswerDto
+    public class AnswerSubmitDto
     {
+        [Required]
         public Guid QuestionId { get; set; }
+
+        [Required]
         public string AnswerValue { get; set; } = string.Empty;
     }
 }

@@ -37,6 +37,7 @@ namespace Checklist.Helpers
             var claims = new[]
             {
     new Claim(JwtRegisteredClaimNames.Sub, user.Username),
+    new Claim("userId", user.Id.ToString()), // ← ADD THIS LINE - User's GUID
     new Claim(ClaimTypes.Role, user.Role ?? ""), //  Correct claim type for role
     new Claim("fullname", user.FullName ?? ""),
     new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
