@@ -25,8 +25,20 @@ namespace Checklist.Models.Dtos
         [Required]
         public Guid ChecklistId { get; set; }
 
+        // NEW - Operator Matricules (REQUIRED, numbers only)
+        [Required(ErrorMessage = "Quality Operator Matricule is required")]
+        [RegularExpression(@"^\d+$", ErrorMessage = "Quality Operator Matricule must contain only numbers")]
+        public string QualityOperatorMatricule { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Production Operator Matricule is required")]
+        [RegularExpression(@"^\d+$", ErrorMessage = "Production Operator Matricule must contain only numbers")]
+        public string ProductionOperatorMatricule { get; set; } = string.Empty;
+
         [Required]
         public List<AnswerSubmitDto> Answers { get; set; } = new();
+
+        // NEW - Action Plans for NOK answers
+        public List<ActionPlanCreateDto>? ActionPlans { get; set; }
     }
 
     public class AnswerSubmitDto

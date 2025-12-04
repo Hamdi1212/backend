@@ -6,24 +6,27 @@ using Checklist.Models.Dtos;
 
 namespace Checklist.Controllers
 {
-    [Authorize] // Allow authenticated users, restrict specific methods as needed
+    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
     public class TemplateController : ControllerBase
     {
         private readonly DataContext _context;
+        private readonly ILogger<TemplateController> _logger;
 
-        public TemplateController(DataContext context)
+        public TemplateController(DataContext context, ILogger<TemplateController> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
-        //  Get all templates
+        // Get all templates
         [HttpGet("getAll")]
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin,User")]
         public async Task<IActionResult> GetAllTemplates()
         {
             var templates = await _context.Templates
+                .AsNoTracking()
                 .Select(t => new TemplateDto
                 {
                     Id = t.Id,
@@ -35,32 +38,39 @@ namespace Checklist.Controllers
             return Ok(templates);
         }
 
-        //  Get template by ID
+        // Get template by ID
         [HttpGet("{id:guid}")]
-        [Authorize(Roles = "Admin,User")] // Allow both Admin and User roles
+        [Authorize(Roles = "Admin,User")]
         public async Task<IActionResult> GetTemplateById(Guid id)
         {
-            var template = await _context.Templates.FindAsync(id);
+            var template = await _context.Templates
+                .AsNoTracking()
+                .Where(t => t.Id == id)
+                .Select(t => new TemplateDto
+                {
+                    Id = t.Id,
+                    Name = t.Name,
+                    Description = t.Description
+                })
+                .FirstOrDefaultAsync();
+
             if (template == null)
                 return NotFound(new { message = "Template not found" });
 
-            var dto = new TemplateDto
-            {
-                Id = template.Id,
-                Name = template.Name,
-                Description = template.Description
-            };
-
-            return Ok(dto);
+            return Ok(template);
         }
 
-        //  Create new template
+        // Create new template
         [HttpPost("create")]
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> CreateTemplate([FromBody] TemplateCreateDto dto)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
+
+            // Check for duplicate template name (case-insensitive)
+            if (await _context.Templates.AnyAsync(t => t.Name.ToLower() == dto.Name.ToLower()))
+                return BadRequest(new { message = "A template with this name already exists" });
 
             var template = new Template
             {
@@ -75,14 +85,21 @@ namespace Checklist.Controllers
             return Ok(new { message = "Template created successfully", template.Id });
         }
 
-        //  Update template
+        // Update template
         [HttpPut("update/{id:guid}")]
-        [Authorize(Roles = "Admin")] // Only Admins can update templates
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> UpdateTemplate(Guid id, [FromBody] TemplateUpdateDto dto)
         {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
             var template = await _context.Templates.FindAsync(id);
             if (template == null)
                 return NotFound(new { message = "Template not found" });
+
+            // Check for duplicate name (excluding current template)
+            if (await _context.Templates.AnyAsync(t => t.Id != id && t.Name.ToLower() == dto.Name.ToLower()))
+                return BadRequest(new { message = "A template with this name already exists" });
 
             template.Name = dto.Name;
             template.Description = dto.Description;
@@ -91,40 +108,66 @@ namespace Checklist.Controllers
             return Ok(new { message = "Template updated successfully" });
         }
 
-        //  Delete template
+        // Delete template
         [HttpDelete("delete/{id:guid}")]
-        [Authorize(Roles = "Admin")] // Only Admins can delete templates
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> DeleteTemplate(Guid id)
         {
-            var template = await _context.Templates.FindAsync(id);
-            if (template == null)
-                return NotFound(new { message = "Template not found" });
+            await using var transaction = await _context.Database.BeginTransactionAsync();
 
-            // Check if any checklists reference this template
-            var checklistCount = await _context.Checklists
-                .Where(c => c.TemplateId == id)
-                .CountAsync();
-            
-            if (checklistCount > 0)
+            try
             {
-                return BadRequest(new { 
-                    message = $"Cannot delete template. It is being used by {checklistCount} checklist(s).",
-                    checklistCount = checklistCount
-                });
+                var template = await _context.Templates
+                    .Include(t => t.questions)
+                    .Include(t => t.Checklists)
+                    .FirstOrDefaultAsync(t => t.Id == id);
+
+                if (template == null)
+                    return NotFound(new { message = "Template not found" });
+
+                // Check if any checklists reference this template
+                if (template.Checklists is { Count: > 0 })
+                {
+                    return BadRequest(new
+                    {
+                        message = $"Cannot delete template. It is being used by {template.Checklists.Count} checklist(s).",
+                        checklistCount = template.Checklists.Count
+                    });
+                }
+
+                // Delete associated questions if any
+                if (template.questions is { Count: > 0 })
+                {
+                    _logger.LogInformation("Deleting {Count} questions associated with template {TemplateId}",
+                        template.questions.Count, id);
+                    _context.Questions.RemoveRange(template.questions);
+                }
+
+                // Delete template
+                _context.Templates.Remove(template);
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return Ok(new { message = "Template deleted successfully" });
             }
-
-            _context.Templates.Remove(template);
-            await _context.SaveChangesAsync();
-
-            return Ok(new { message = "Template deleted successfully" });
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Error deleting template {TemplateId}", id);
+                return StatusCode(500, new { message = "Error deleting template" });
+            }
         }
+
+        // Get available templates (for users)
         [HttpGet("available")]
-        [Authorize(Roles = "Admin,User")] // Allow both Admin and User roles
+        [Authorize(Roles = "Admin,User")]
         public async Task<IActionResult> GetAvailableTemplates()
         {
             try
             {
                 var templates = await _context.Templates
+                    .AsNoTracking()
                     .Select(t => new
                     {
                         id = t.Id,
@@ -133,12 +176,14 @@ namespace Checklist.Controllers
                     })
                     .ToListAsync();
 
+                _logger.LogInformation("Retrieved {Count} available templates", templates.Count);
+
                 return Ok(templates);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[GetAvailableTemplates] Error: {ex.Message}");
-                return StatusCode(500, new { message = "Error fetching templates", error = ex.Message });
+                _logger.LogError(ex, "Error fetching available templates");
+                return StatusCode(500, new { message = "Error fetching templates" });
             }
         }
     }

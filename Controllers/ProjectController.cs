@@ -7,25 +7,27 @@ using System.Security.Claims;
 
 namespace Checklist.Controllers
 {
-    [Authorize] // Allow authenticated users, restrict specific methods as needed
+    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
     public class ProjectController : ControllerBase
     {
         private readonly DataContext _context;
+        private readonly ILogger<ProjectController> _logger;
 
-        public ProjectController(DataContext context)
+        public ProjectController(DataContext context, ILogger<ProjectController> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
-        //  1. Get all projects
+        // 1. Get all projects
         [HttpGet("getAll")]
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> GetAllProjects()
         {
             var projects = await _context.Projects
-                .Include(p => p.Lines)
+                .AsNoTracking()
                 .Select(p => new ProjectDto
                 {
                     Id = p.Id,
@@ -45,32 +47,34 @@ namespace Checklist.Controllers
             return Ok(projects);
         }
 
-        //  2. Get project by ID
+        // 2. Get project by ID
         [HttpGet("{id:guid}")]
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> GetProjectById(Guid id)
         {
             var project = await _context.Projects
-                .Include(p => p.Lines)
-                .FirstOrDefaultAsync(p => p.Id == id);
+                .AsNoTracking()
+                .Where(p => p.Id == id)
+                .Select(p => new ProjectDto
+                {
+                    Id = p.Id,
+                    Name = p.Name,
+                    Description = p.Description,
+                    Lines = p.Lines != null
+                        ? p.Lines.Select(l => new LineDto
+                        {
+                            Id = l.Id,
+                            Name = l.Name,
+                            ProjectId = l.ProjectId
+                        }).ToList()
+                        : new List<LineDto>()
+                })
+                .FirstOrDefaultAsync();
 
             if (project == null)
                 return NotFound(new { message = "Project not found" });
 
-            var dto = new ProjectDto
-            {
-                Id = project.Id,
-                Name = project.Name,
-                Description = project.Description,
-                Lines = project.Lines?.Select(l => new LineDto
-                {
-                    Id = l.Id,
-                    Name = l.Name,
-                    ProjectId = l.ProjectId
-                }).ToList()
-            };
-
-            return Ok(dto);
+            return Ok(project);
         }
 
         // 3. Create new project
@@ -80,6 +84,10 @@ namespace Checklist.Controllers
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
+
+            // Check for duplicate project name (case-insensitive)
+            if (await _context.Projects.AnyAsync(p => p.Name.ToLower() == dto.Name.ToLower()))
+                return BadRequest(new { message = "Project with this name already exists" });
 
             var project = new Project
             {
@@ -94,14 +102,21 @@ namespace Checklist.Controllers
             return Ok(new { message = "Project created successfully", project.Id });
         }
 
-        //  4. Update existing project
+        // 4. Update existing project
         [HttpPut("update/{id:guid}")]
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> UpdateProject(Guid id, [FromBody] ProjectUpdateDto dto)
         {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
             var project = await _context.Projects.FindAsync(id);
             if (project == null)
                 return NotFound(new { message = "Project not found" });
+
+            // Check for duplicate name (excluding current project)
+            if (await _context.Projects.AnyAsync(p => p.Id != id && p.Name.ToLower() == dto.Name.ToLower()))
+                return BadRequest(new { message = "Project with this name already exists" });
 
             project.Name = dto.Name;
             project.Description = dto.Description;
@@ -110,34 +125,50 @@ namespace Checklist.Controllers
             return Ok(new { message = "Project updated successfully" });
         }
 
-        //  5. Delete project
+        // 5. Delete project
         [HttpDelete("delete/{id:guid}")]
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> DeleteProject(Guid id)
         {
-            var project = await _context.Projects
-                .Include(p => p.Lines)
-                .FirstOrDefaultAsync(p => p.Id == id);
+            await using var transaction = await _context.Database.BeginTransactionAsync();
 
-            if (project == null)
-                return NotFound(new { message = "Project not found" });
+            try
+            {
+                var project = await _context.Projects
+                    .Include(p => p.Lines)
+                    .FirstOrDefaultAsync(p => p.Id == id);
 
-            // Optional: delete lines first to avoid foreign key issues
-            if (project.Lines != null && project.Lines.Any())
-                _context.Lines.RemoveRange(project.Lines);
+                if (project == null)
+                    return NotFound(new { message = "Project not found" });
 
-            _context.Projects.Remove(project);
-            await _context.SaveChangesAsync();
+                // Delete associated lines
+                if (project.Lines is { Count: > 0 })
+                    _context.Lines.RemoveRange(project.Lines);
 
-            return Ok(new { message = "Project deleted successfully" });
+                // Delete project
+                _context.Projects.Remove(project);
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return Ok(new { message = "Project deleted successfully" });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Error deleting project {ProjectId}", id);
+                return StatusCode(500, new { message = "Error deleting project" });
+            }
         }
+
+        // 6. Get projects assigned to current user
         [HttpGet("my")]
-        [Authorize(Roles = "Admin,User")] // Allow both Admin and User roles
+        [Authorize(Roles = "Admin,User")]
         public async Task<IActionResult> GetMyProjects()
         {
             try
             {
-                // Extract username from token (same logic as ChecklistController /my)
+                // Extract username from token
                 var username = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
                             ?? User.FindFirst(ClaimTypes.Name)?.Value
                             ?? User.FindFirst("sub")?.Value
@@ -145,25 +176,14 @@ namespace Checklist.Controllers
 
                 if (string.IsNullOrWhiteSpace(username))
                 {
+                    _logger.LogWarning("Could not determine user from token");
                     return Unauthorized(new { message = "Could not determine user from token" });
                 }
 
-                Console.WriteLine($"[GetMyProjects] Username from token: '{username}'");
-
-                // Find user in database
-                var dbUser = await _context.Users.FirstOrDefaultAsync(u => u.Username == username);
-                if (dbUser == null)
-                {
-                    Console.WriteLine($"[GetMyProjects] User '{username}' not found in database");
-                    return NotFound(new { message = "User not found" });
-                }
-
-                Console.WriteLine($"[GetMyProjects] User found: {dbUser.Id}");
-
-                // Get projects assigned to this user through UserProjects table
+                // Get projects in a single optimized query
                 var projects = await _context.UserProjects
-                    .Where(up => up.UserId == dbUser.Id)
-                    .Include(up => up.Project)
+                    .AsNoTracking()
+                    .Where(up => up.User.Username == username)
                     .Select(up => new
                     {
                         id = up.Project.Id,
@@ -172,14 +192,14 @@ namespace Checklist.Controllers
                     })
                     .ToListAsync();
 
-                Console.WriteLine($"[GetMyProjects] Found {projects.Count} projects for user '{username}'");
+                _logger.LogInformation("Found {Count} projects for user '{Username}'", projects.Count, username);
 
                 return Ok(projects);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[GetMyProjects] Error: {ex.Message}");
-                return StatusCode(500, new { message = "Error fetching projects", error = ex.Message });
+                _logger.LogError(ex, "Error fetching projects for user");
+                return StatusCode(500, new { message = "Error fetching projects" });
             }
         }
     }

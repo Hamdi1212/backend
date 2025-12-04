@@ -40,22 +40,23 @@ namespace Checklist.Controllers
             };
 
             _context.Users.Add(user);
-            await _context.SaveChangesAsync();
 
-            //  Assign projects if provided
-            if (dto.ProjectIds != null && dto.ProjectIds.Count > 0)
+            // Assign projects if provided
+            if (dto.ProjectIds is { Count: > 0 })
             {
-                var validProjects = await _context.Projects
+                // Validate project IDs exist without loading full entities
+                var validProjectIds = await _context.Projects
                     .Where(p => dto.ProjectIds.Contains(p.Id))
+                    .Select(p => p.Id)
                     .ToListAsync();
 
-                foreach (var project in validProjects)
+                foreach (var projectId in validProjectIds)
                 {
                     _context.UserProjects.Add(new UserProject
                     {
                         Id = Guid.NewGuid(),
                         UserId = user.Id,
-                        ProjectId = project.Id
+                        ProjectId = projectId
                     });
                 }
 

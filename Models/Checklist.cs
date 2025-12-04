@@ -14,27 +14,23 @@ namespace Checklist.Models
         public Guid TemplateId { get; set; }
         public string status { get; set; } = "InProgess";
 
-
-        // New fields requested: Date, Shift, NotificationStatus
-        // Date: timestamp for creation/submission
+        // Existing fields
         public DateTime? Date { get; set; }
-
-        // Shift for header information from the front
         public string? Shift { get; set; }
-
-        // Notification status for PDF/email processing
         public string NotificationStatus { get; set; } = "Pending";
 
-        
+        // NEW FIELDS - Operator Matricules
+        public string? QualityOperatorMatricule { get; set; }
+        public string? ProductionOperatorMatricule { get; set; }
 
-
-        // object navigation properties
+        // Navigation properties
         public User User { get; set; }
-        public Project? Project { get; set; } // Updated navigation property
-
-        public Line? Line { get; set; } // Updated navigation property
+        public Project? Project { get; set; }
+        public Line? Line { get; set; }
         public Template Template { get; set; }
-
         public ICollection<Answer>? Answers { get; set; }
+        
+        // NEW - Action Plans relationship
+        public ICollection<ActionPlan>? ActionPlans { get; set; }
     }
 }
