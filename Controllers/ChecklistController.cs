@@ -88,8 +88,6 @@ namespace Checklist.Controllers
             return Ok(new { checklistId = checklist.Id, message = "Checklist démarrée." });
         }
 
-        // BACKEND FIX - Replace the submit method in your ChecklistController.cs
-
         [Authorize(Roles = "User")]
         [HttpPost("submit")]
         public async Task<IActionResult> SubmitChecklist([FromBody] ChecklistSubmitDto dto)
@@ -198,7 +196,7 @@ namespace Checklist.Controllers
                         {
                             Id = Guid.NewGuid(),
                             ChecklistId = checklist.Id,
-                            AnswerId = correspondingAnswer.Id, // Use the answer ID we just created
+                            AnswerId = correspondingAnswer.Id,
                             QuestionId = actionPlanDto.QuestionId,
                             NokPointNumber = questionNumber,
                             CreatedDate = DateTime.UtcNow,
@@ -241,7 +239,6 @@ namespace Checklist.Controllers
                 return StatusCode(500, new { message = "Error submitting checklist", error = ex.Message });
             }
         }
-
 
         [Authorize(Roles = "User")]
         [HttpGet("my")]
@@ -345,9 +342,153 @@ namespace Checklist.Controllers
                     createdBy = ap.CreatedBy,
                     createdDate = ap.CreatedDate
                 })
-            };
+                       };
 
             return Ok(response);
+        }
+
+        //  NEW: Admin endpoint - Get checklists by project with filters
+        [Authorize(Roles = "Admin")]
+        [HttpGet("project/{projectId:guid}")]
+        public async Task<IActionResult> GetChecklistsByProject(
+            Guid projectId,
+            [FromQuery] DateTime? startDate,
+            [FromQuery] DateTime? endDate,
+            [FromQuery] string? status)
+        {
+            _logger.LogInformation(
+                "[GetChecklistsByProject] ProjectId: {ProjectId}, StartDate: {StartDate}, EndDate: {EndDate}, Status: {Status}",
+                projectId, startDate, endDate, status);
+
+            // Validate project exists
+            var project = await _context.Projects
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Id == projectId);
+
+            if (project == null)
+                return NotFound(new { message = "Project not found" });
+
+            // Build query
+            var query = _context.Checklists
+                .AsNoTracking()
+                .Where(c => c.ProjectId == projectId);
+
+            // Apply date filters if provided
+            if (startDate.HasValue)
+            {
+                query = query.Where(c => c.Date >= startDate.Value);
+            }
+
+            if (endDate.HasValue)
+            {
+                // Include the entire end date
+                var endOfDay = endDate.Value.Date.AddDays(1).AddTicks(-1);
+                query = query.Where(c => c.Date <= endOfDay);
+            }
+
+            // Apply status filter if provided
+            if (!string.IsNullOrEmpty(status))
+            {
+                query = query.Where(c => c.status == status);
+            }
+
+            // Execute query and get results
+            var checklists = await query
+                .Include(c => c.Template)
+                .Include(c => c.User)
+                .Include(c => c.Line)
+                .Include(c => c.Answers)
+                .Include(c => c.ActionPlans)
+                .OrderByDescending(c => c.Date)
+                .Select(c => new
+                {
+                    id = c.Id,
+                    templateName = c.Template != null ? c.Template.Name : "Unknown",
+                    userName = c.User != null ? c.User.FullName : "Unknown",
+                    lineName = c.Line != null ? c.Line.Name : "",
+                    status = c.status ?? "Pending",
+                    date = c.Date,
+                    shift = c.Shift,
+                    qualityOperatorMatricule = c.QualityOperatorMatricule,
+                    productionOperatorMatricule = c.ProductionOperatorMatricule,
+                    // Count NOK answers
+                    nokCount = c.Answers != null ? c.Answers.Count(a => a.AnswerValue == "NOK") : 0,
+                    // Count action plans
+                    actionPlanCount = c.ActionPlans != null ? c.ActionPlans.Count : 0,
+                    // Total questions answered
+                    totalAnswers = c.Answers != null ? c.Answers.Count : 0
+                })
+                .ToListAsync();
+
+            _logger.LogInformation(
+                "[GetChecklistsByProject] Found {Count} checklists for project '{ProjectName}'",
+                checklists.Count, project.Name);
+
+            return Ok(new
+            {
+                projectId = project.Id,
+                projectName = project.Name,
+                projectDescription = project.Description,
+                totalChecklists = checklists.Count,
+                checklists
+            });
+        }
+
+        //  NEW: Admin endpoint - Get project statistics
+        [Authorize(Roles = "Admin")]
+        [HttpGet("project/{projectId:guid}/statistics")]
+        public async Task<IActionResult> GetProjectStatistics(
+            Guid projectId,
+            [FromQuery] DateTime? startDate,
+            [FromQuery] DateTime? endDate)
+        {
+            _logger.LogInformation(
+                "[GetProjectStatistics] ProjectId: {ProjectId}, StartDate: {StartDate}, EndDate: {EndDate}",
+                projectId, startDate, endDate);
+
+            var projectExists = await _context.Projects.AnyAsync(p => p.Id == projectId);
+            if (!projectExists)
+                return NotFound(new { message = "Project not found" });
+
+            var query = _context.Checklists
+                .Where(c => c.ProjectId == projectId);
+
+            if (startDate.HasValue)
+                query = query.Where(c => c.Date >= startDate.Value);
+
+            if (endDate.HasValue)
+            {
+                var endOfDay = endDate.Value.Date.AddDays(1).AddTicks(-1);
+                query = query.Where(c => c.Date <= endOfDay);
+            }
+
+            var statistics = new
+            {
+                totalChecklists = await query.CountAsync(),
+                completedChecklists = await query.CountAsync(c => c.status == "Completed"),
+                pendingChecklists = await query.CountAsync(c => c.status == "Pending"),
+                totalNOKAnswers = await query
+                    .SelectMany(c => c.Answers)
+                    .CountAsync(a => a.AnswerValue == "NOK"),
+                totalOKAnswers = await query
+                    .SelectMany(c => c.Answers)
+                    .CountAsync(a => a.AnswerValue == "OK"),
+                totalActionPlans = await query
+                    .SelectMany(c => c.ActionPlans)
+                    .CountAsync(),
+                openActionPlans = await query
+                    .SelectMany(c => c.ActionPlans)
+                    .CountAsync(ap => ap.Status == "Open"),
+                closedActionPlans = await query
+                    .SelectMany(c => c.ActionPlans)
+                    .CountAsync(ap => ap.Status == "Closed")
+            };
+
+            _logger.LogInformation(
+                "[GetProjectStatistics] Statistics for project {ProjectId}: {Statistics}",
+                projectId, statistics);
+
+            return Ok(statistics);
         }
     }
 }
